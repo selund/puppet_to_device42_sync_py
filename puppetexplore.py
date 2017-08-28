@@ -103,6 +103,7 @@ def d42_update(dev42, nodes, options, static_opt, from_version='3', puppethost=N
                     virtual_subtype = 'ec2'
             else:
                 is_virtual = 'no'
+                nodetype = 'physical'
 
             cpupower = 0
             cpucount = node['physicalprocessorcount']
@@ -126,7 +127,6 @@ def d42_update(dev42, nodes, options, static_opt, from_version='3', puppethost=N
                 'hddcount': hddcount,
                 'hddsize': hddsize,
                 'serial_no': serial_no,
-
                 'macaddress': node['macaddress'],
                 'customer': customer_name,
                 'service_level': static_opt.get('service_level'),
