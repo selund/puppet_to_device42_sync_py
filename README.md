@@ -5,6 +5,7 @@ You may use scripts for direct Puppet or/and Foreman discoveries.
 
 # Requirements
 Take the file `settings.yaml.example` and rename it to `settings.yaml`. Then change the settings to correct ones.
+Install `requirements.txt` with pip. Please note that you need installed `python-devel`.
 
 # Puppet Configure
 For proper connection clients certificate should be signed on puppet server and you should provide:
@@ -28,6 +29,13 @@ See [NodeFilter.md](./NodeFilter.md) for node filtering options.
 
 # Foreman Configure
 Client should be allowed to connect to foreman api.
+
+# Custom Fields Mapping
+You may send any variable from nodes. Just define `mapping` section in `settings.yaml` ( we have commented example ). 
+
+If variable are tuple, list or dict we send length of the particular object. 
+
+If you want to see all possible node values, please use `show_node` parameter in `settings.yaml` `options` section.
 
 # Run
 Puppet :

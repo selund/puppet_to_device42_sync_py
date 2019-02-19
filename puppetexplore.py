@@ -8,6 +8,7 @@ import json
 import re
 import argparse
 
+from netaddr import IPAddress
 from puppetwrapper import PuppetWrapper
 import device42
 from nodefilter import node_filter
@@ -43,7 +44,7 @@ def get_config(cfgpath):
     return config
 
 
-def d42_update(dev42, nodes, options, static_opt, from_version='3', puppethost=None):
+def d42_update(dev42, nodes, options, static_opt, mapping, from_version='3', puppethost=None):
     old_node = str(from_version or '3')[0] <= '3'
 
     # get customer info
@@ -62,9 +63,14 @@ def d42_update(dev42, nodes, options, static_opt, from_version='3', puppethost=N
 
     # processing all nodes
     for node in nodes:
+
         if 'hostname' not in node:
             logger.debug("Skip node: no name found")
             continue
+
+        if options.get('show_node'):
+            print node
+
         node_name = node['hostname']
         if options.get('as_node_name').upper() == 'FQDN':
             node_name = node.get('fqdn', node_name)
@@ -81,7 +87,6 @@ def d42_update(dev42, nodes, options, static_opt, from_version='3', puppethost=N
             # detect memory
             totalmem = int(float(node['memorysize_mb']))
 
-            serial_no = node['serial_no']
             # detect HDD
             hddcount = 0
             hddsize = 0  # first in bytes, then should be converted to Gb
@@ -96,26 +101,32 @@ def d42_update(dev42, nodes, options, static_opt, from_version='3', puppethost=N
             is_virtual = str(node['is_virtual']).lower() == 'true'
             virtual_subtype = None
             if is_virtual:
-                is_virtual = 'yes'
                 nodetype = 'virtual'
                 virtual_subtype = 'other'
                 if 'ec2_metadata' in node:
                     virtual_subtype = 'ec2'
+<<<<<<< HEAD
             else:
                 is_virtual = 'no'
                 nodetype = 'physical'
+=======
+>>>>>>> upstream/master
 
             cpupower = 0
             cpucount = node['physicalprocessorcount']
             cpucores = node['processorcount']
-            cpupowers = cpuf_re.findall(node['processors']['models'][0])
+
+            try:
+                cpupowers = cpuf_re.findall(node['processors']['models'][0])
+            except TypeError:
+                cpupowers = None
+
             if cpupowers:
                 cpupower = int(float(cpupowers[0]) * 1000)
 
             data = {
                 'name': node_name,
                 'type': nodetype,
-                'is_it_virtual_host': is_virtual,
                 'virtual_subtype': virtual_subtype,
                 'os': node['operatingsystem'],
                 'osver': node['operatingsystemrelease'],
@@ -126,11 +137,18 @@ def d42_update(dev42, nodes, options, static_opt, from_version='3', puppethost=N
                 'cpupower': cpupower,
                 'hddcount': hddcount,
                 'hddsize': hddsize,
+<<<<<<< HEAD
                 'serial_no': serial_no,
+=======
+
+>>>>>>> upstream/master
                 'macaddress': node['macaddress'],
                 'customer': customer_name,
                 'service_level': static_opt.get('service_level'),
             }
+
+            if 'serial_no' in node:
+                data.update({'serial_no': node['serial_no']})
 
             if options.get('hostname_precedence'):
                 data.update({'new_name': node_name})
@@ -152,6 +170,45 @@ def d42_update(dev42, nodes, options, static_opt, from_version='3', puppethost=N
                 }
                 updateinfo = dev42._put('device/custom_field', cfdata)
 
+            global depth
+            depth = []
+            res = []
+            def get_depth(obj):
+                global depth
+                for item in obj:
+                    depth.append(item)
+                    if type(obj[item]) == str:
+                      res.append({obj[item]: depth})
+                      depth = []
+                    else:
+                      get_depth(obj[item])
+                return res
+
+            if mapping:
+                full_depth = get_depth(mapping)
+                for element in full_depth:
+                    for key in element:
+                        value = None
+                        step = node
+
+                        try:
+                            for x in element[key]:
+                                step = step[x]
+                        except KeyError:
+                            continue
+
+                        if type(step) in [unicode, str, int]:
+                            value = step
+                        elif type(step) in [list, tuple, dict]:
+                            value = len(step)
+
+                        cfdata = {
+                            'name': node_name,
+                            'key': key,
+                            'value': value
+                        }
+                        updateinfo = dev42._put('device/custom_field', cfdata)
+
             # Dealing with IPs
             device_ips = dev42._get("ips", data={'device': node_name})['ips']
             updated_ips = []
@@ -164,6 +221,8 @@ def d42_update(dev42, nodes, options, static_opt, from_version='3', puppethost=N
                     ipaddr = node['ipaddress_%s' % ifsname.lower()]
                     if ipaddr.startswith('127.0'):
                         continue  # local loopbacks
+                    if ipaddr.lower().startswith('fe80'):
+                        continue
                     macaddr = node['macaddress_%s' % ifsname.lower()]
                     # update IPv4
                     ipdata = {
@@ -184,6 +243,7 @@ def d42_update(dev42, nodes, options, static_opt, from_version='3', puppethost=N
                         continue  # filter out local interface
                     if ifs['ip'].startswith('127.0'):
                         continue  # local loopbacks
+
                     # update IPv4
                     ipdata = {
                         'ipaddress': ifs['ip'],
@@ -195,6 +255,22 @@ def d42_update(dev42, nodes, options, static_opt, from_version='3', puppethost=N
                     updateinfo = dev42._post('ips', ipdata)
                     updated_ips.append(updateinfo['msg'][1])
                     logger.info("IP %s for device %s updated/created (id %s)" % (ifs['ip'], node_name, deviceid))
+
+                    if 'network' in ifs and 'netmask' in ifs:
+                        # update IPv4 subnet
+                        mask = IPAddress(ifs['netmask']).netmask_bits()
+                        subdata = {
+                            'network': ifs['network'],
+                            'mask_bits': mask
+                        }
+                        # logger.debug("IP data: %s" % ipdata)
+                        updateinfo = dev42._post('subnets', subdata)
+                        updated_ips.append(updateinfo['msg'][1])
+                        logger.info("Subnet %s/%s for device %s updated/created (id %s)" % (ifs['network'], mask, node_name, deviceid))
+
+                    if 'ip6' in ifs and ifs['ip6'].startswith('fe80::'):
+                        continue  # local loopbacks
+
                     # update IPv6
                     if 'ip6' in ifs and len(ifs['ip6']) > 6:
                         ipdata = {
@@ -204,9 +280,27 @@ def d42_update(dev42, nodes, options, static_opt, from_version='3', puppethost=N
                             'macaddress': ifs['mac'],
                         }
                         # logger.debug("IP data: %s" % ipdata)
-                        updateinfo = dev42._post('ips', ipdata)
-                        updated_ips.append(updateinfo['msg'][1])
-                        logger.info("IP %s for device %s updated/created (id %s)" % (ifs['ip6'], node_name, deviceid))
+                        try:
+                            updateinfo = dev42._post('ips', ipdata)
+                            updated_ips.append(updateinfo['msg'][1])
+                            logger.info("IP %s for device %s updated/created (id %s)" % (ifs['ip6'], node_name, deviceid))
+                        except device42.Device42HTTPError as e:
+                            print e
+
+                        if 'network6' in ifs and 'netmask6' in ifs:
+                            # update IPv6 subnet
+                            mask =  IPAddress(ifs['netmask6']).netmask_bits()
+                            subdata = {
+                                'network': ifs['network6'],
+                                'mask_bits': mask
+                            }
+                            try:
+                                # logger.debug("IP data: %s" % ipdata)
+                                updateinfo = dev42._post('subnets', subdata)
+                                updated_ips.append(updateinfo['msg'][1])
+                                logger.info("Subnet %s/%s for device %s updated/created (id %s)" % (ifs['network6'], mask, node_name, deviceid))
+                            except device42.Device42HTTPError as e:
+                                print e
 
             # Delete other IPs from the device
             if updated_ips:
@@ -288,7 +382,7 @@ def main():
         logger=logger,
         debug=debugmode
     )
-    d42_update(dev42, puppetnodes, config['options'], config.get('static', {}),
+    d42_update(dev42, puppetnodes, config['options'], config.get('static', {}), config.get('mapping', {}),
                from_version=pupversion, puppethost=config['puppet_server']['host'])
 
     return 0

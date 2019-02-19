@@ -48,7 +48,7 @@ def main():
     user = config['foreman']['user']
     password = config['foreman']['pass']
 
-    f = Foreman('https://%s' % host, (user, password), verify=False)
+    f = Foreman('https://%s' % host, (user, password), verify=False, api_version=1)
     node_ids = []
     for node in f.hosts.index(per_page=100000):
         node = node['host']
@@ -57,7 +57,7 @@ def main():
         elif len(onlynodes) == 0:
             node_ids.append(node['id'])
 
-    facts_query = 'fqdn or memorysize_mb or is_virtual or processorcount or processors::models or serialnumber' 
+    facts_query = 'fqdn or memorysize_mb or is_virtual or processorcount or processors::models or serialnumber'
 
     nodes = []
     for node_id in node_ids:
@@ -78,6 +78,48 @@ def main():
         networking = f.do_get('/api/hosts/%s/facts?search=networking&per_page=999' % node_id, {})
         networking = networking[host['name']] if host['name'] in networking else {}
 
+        if 'networking::interfaces' in networking:
+            networking2 = {}
+            for x in networking:
+                value = networking[x]
+                if value:
+                    value = value.replace('"=>', '":')
+                    chain = x.split('::')
+
+                    last = False
+                    el = 0
+                    obj = networking2
+                    while not last:
+                        key = chain[el:el+1][0]
+                        el += 1
+                        if key not in obj:
+                            obj[key] = {}
+                        obj = obj[key]
+                        if len(chain) == el:
+                            last = True
+                            obj[key] = value
+
+            def clean_dict(obj):
+                for x in obj:
+                    try:
+                        obj[x] = obj[x][x]
+                    except:
+                        pass
+                    try:
+                        if type(obj[x]) == dict:
+                            obj[x] = clean_dict(obj[x])
+                    except:
+                        pass
+
+                return obj
+
+            networking = {
+                'networking': json.dumps(clean_dict(networking2['networking']))
+            }
+
+        if facts == {}:
+            continue
+
         formatted_disks = {}
         for key in disks:
             splitted = key.split('::')
@@ -87,28 +129,21 @@ def main():
                         'size_bytes': disks[key]
                     }
 
-        formatted_interfaces = {}
-        for key in networking:
-            splitted = key.split('::')
-            if len(splitted) == 4:
-                if splitted[2] not in formatted_interfaces:
-                    formatted_interfaces[splitted[2]] = {}
-                formatted_interfaces[splitted[2]].update({splitted[3]: networking[key]})
-
-	# Check to see that we have all data, or set it to '' if not
-	if facts.has_key('is_virtual'):
-		_is_virtual = facts['is_virtual'] 
-	else:
-		_is_virtual = False
+        # Check to see that we have all data, or set it to '' if not
+        if facts.has_key('is_virtual'):
+            _is_virtual = facts['is_virtual']
+        else:
+            _is_virtual = False
         if facts.has_key('serialnumber'):
-		_serialnumber = facts['serialnumber']
-	else:
-		_serialnumber = ''
+            _serialnumber = facts['serialnumber']
+        else:
+            _serialnumber = ''
         if facts.has_key('processors::models'):
-		_processors_models = ast.literal_eval(facts['processors::models'])
-	else:
-		_processors_models = ['']
-        # prepare correct format
+                _processors_models = ast.literal_eval(facts['processors::models'])
+        else:
+            _processors_models = ['']
+            # prepare correct format
+
         data = {
             'hostname': host['name'],
             'memorysize_mb': facts['memorysize_mb'],
@@ -124,9 +159,7 @@ def main():
             'operatingsystem': host['os']['operatingsystem']['name'],
             'operatingsystemrelease': host['os']['operatingsystem']['release_name'],
             'macaddress': host['mac'],
-            'networking': {
-                'interfaces': formatted_interfaces
-            }
+            'networking': json.loads(networking['networking'].replace('"=>', '":')) if 'networking' in networking else ''
         }
         if len(ec2_metadata) > 0:
             data.update({'ec2_metadata': ec2_metadata})
@@ -145,7 +178,7 @@ def main():
         debug=debugmode
     )
 
-    d42_update(dev42, nodes, config['options'], config.get('static', {}),
+    d42_update(dev42, nodes, config['options'], config.get('static', {}), config.get('mapping', {}),
                from_version='4', puppethost=config['foreman']['host'])
 
     return 0

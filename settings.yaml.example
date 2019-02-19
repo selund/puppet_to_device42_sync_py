@@ -26,6 +26,14 @@ device42:
     user: user
     pass: passs
 
+# custom fields mapping
+# mapping:
+#    # puppet field / device42 field
+#    system_uptime:
+#        uptime: test_field
+#    kernel: test_field2
+
+
 
 # ========= Options
 
@@ -37,7 +45,8 @@ static:
 
 options:
     # as_node_name: one of [fqdn, name]
+    show_node: True
     as_node_name: fqdn
     hostname_precedence: True
-    tags: test, test2, test3
+    # tags: test, test2, test3
     node_filter: []
