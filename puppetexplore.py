@@ -105,13 +105,9 @@ def d42_update(dev42, nodes, options, static_opt, mapping, from_version='3', pup
                 virtual_subtype = 'other'
                 if 'ec2_metadata' in node:
                     virtual_subtype = 'ec2'
-<<<<<<< HEAD
             else:
                 is_virtual = 'no'
                 nodetype = 'physical'
-=======
->>>>>>> upstream/master
-
             cpupower = 0
             cpucount = node['physicalprocessorcount']
             cpucores = node['processorcount']
@@ -137,11 +133,7 @@ def d42_update(dev42, nodes, options, static_opt, mapping, from_version='3', pup
                 'cpupower': cpupower,
                 'hddcount': hddcount,
                 'hddsize': hddsize,
-<<<<<<< HEAD
                 'serial_no': serial_no,
-=======
-
->>>>>>> upstream/master
                 'macaddress': node['macaddress'],
                 'customer': customer_name,
                 'service_level': static_opt.get('service_level'),
